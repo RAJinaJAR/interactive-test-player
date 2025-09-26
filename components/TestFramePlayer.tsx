@@ -1,5 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useImperativeHandle, forwardRef } from 'react';
 import { FrameData, BoxType, InputBox } from '../types';
+
+export interface TestFramePlayerRef {
+  triggerMistakeFlash: () => void;
+}
 
 interface TestFramePlayerProps {
   frame: FrameData;
@@ -7,13 +11,13 @@ interface TestFramePlayerProps {
   onHotspotInteraction: (boxId: string) => void;
   onFrameClickMistake: () => void;
   onInputBlur: () => void;
-  userInputsForFrame: Record<string, string>; 
-  userHotspotsClickedForFrame: Record<string, boolean>; 
-  showResults: boolean; 
-  justClickedHotspotId?: string | null; 
+  userInputsForFrame: Record<string, string>;
+  userHotspotsClickedForFrame: Record<string, boolean>;
+  showResults: boolean;
+  justClickedHotspotId?: string | null;
 }
 
-const TestFramePlayer: React.FC<TestFramePlayerProps> = ({
+const TestFramePlayer = forwardRef<TestFramePlayerRef, TestFramePlayerProps>(({
   frame,
   onInputChange,
   onHotspotInteraction,
@@ -23,12 +27,19 @@ const TestFramePlayer: React.FC<TestFramePlayerProps> = ({
   userHotspotsClickedForFrame,
   showResults,
   justClickedHotspotId,
-}) => {
+}, ref) => {
   const [showMistakeFlash, setShowMistakeFlash] = useState(false);
 
   useEffect(() => {
     setShowMistakeFlash(false);
   }, [frame.id]);
+  
+  useImperativeHandle(ref, () => ({
+    triggerMistakeFlash: () => {
+      setShowMistakeFlash(true);
+      setTimeout(() => setShowMistakeFlash(false), 700);
+    },
+  }));
 
   const handleContainerClick = (event: React.MouseEvent<HTMLDivElement>) => {
     if (showResults) return;
@@ -36,8 +47,6 @@ const TestFramePlayer: React.FC<TestFramePlayerProps> = ({
     // Check if click was on the background, not on an interactive element
     if (target.dataset.interactiveType !== 'hotspot' && target.closest('[data-interactive-type="input-area"]') === null) {
       onFrameClickMistake();
-      setShowMistakeFlash(true);
-      setTimeout(() => setShowMistakeFlash(false), 700);
     }
   };
 
@@ -45,8 +54,8 @@ const TestFramePlayer: React.FC<TestFramePlayerProps> = ({
     <div
       className={`relative w-full bg-gray-800 rounded-lg overflow-hidden shadow-lg ${showMistakeFlash ? 'mistake-flash-animation' : ''}`}
       style={{ aspectRatio: `${frame.originalWidth} / ${frame.originalHeight}` }}
-      onClick={handleContainerClick} 
-      role="group" 
+      onClick={handleContainerClick}
+      role="group"
       aria-label={`Test frame content area for frame ID: ${frame.id.substring(0,8)}`}
     >
       <img
@@ -69,18 +78,18 @@ const TestFramePlayer: React.FC<TestFramePlayerProps> = ({
           let icon = null;
 
           if (showResults) {
-            hotspotClasses += ' cursor-default'; 
-            if (userHotspotsClickedForFrame[box.id]) { 
+            hotspotClasses += ' cursor-default';
+            if (userHotspotsClickedForFrame[box.id]) {
               hotspotClasses += ' bg-green-500/40 border-2 border-green-400 rounded-md';
               icon = <span className="text-white text-2xl font-bold select-none" aria-label="Correctly clicked">✓</span>;
-            } else { 
-              hotspotClasses += ' bg-red-500/40 border-2 border-red-400 rounded-md';
-              icon = <span className="text-white text-2xl font-bold select-none" aria-label="Missed hotspot">✗</span>;
+            } else {
+              hotspotClasses += ' bg-yellow-500/40 border-2 border-yellow-400 rounded-md';
+              icon = <span className="text-white text-2xl font-bold select-none" aria-label="Missed hotspot">!</span>;
             }
           } else {
-            hotspotClasses += ` cursor-default bg-transparent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-yellow-400 rounded-md`;
+            hotspotClasses += ` cursor-pointer bg-transparent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-yellow-400 rounded-md`;
             if (justClickedHotspotId === box.id) {
-              hotspotClasses += ' outline outline-4 outline-green-400 bg-green-500/50'; 
+              hotspotClasses += ' outline outline-4 outline-green-400 bg-green-500/50';
             }
           }
 
@@ -93,9 +102,9 @@ const TestFramePlayer: React.FC<TestFramePlayerProps> = ({
               onKeyDown={(e) => { if (!showResults && (e.key === 'Enter' || e.key === ' ')) { e.stopPropagation(); onHotspotInteraction(box.id); }}}
               title={box.label}
               role="button"
-              tabIndex={showResults ? -1 : 0} 
+              tabIndex={showResults ? -1 : 0}
               aria-label={`Hotspot: ${box.label}`}
-              data-interactive-type="hotspot" 
+              data-interactive-type="hotspot"
             >
               {icon}
             </div>
@@ -117,7 +126,7 @@ const TestFramePlayer: React.FC<TestFramePlayerProps> = ({
               key={box.id}
               style={boxStyle}
               className={`absolute flex p-0.5 rounded-md ring-2 ring-offset-2 ring-offset-gray-800/80 transition-shadow ${ringClass}`}
-              onClick={(e) => e.stopPropagation()} 
+              onClick={(e) => e.stopPropagation()}
               data-interactive-type="input-area"
             >
               <input
@@ -126,7 +135,7 @@ const TestFramePlayer: React.FC<TestFramePlayerProps> = ({
                 onChange={(e) => !showResults && onInputChange(box.id, e.target.value)}
                 onBlur={() => !showResults && onInputBlur()}
                 readOnly={showResults}
-                placeholder={!showResults ? box.label : ''} 
+                placeholder={!showResults ? box.label : ''}
                 title={box.label}
                 aria-label={`Input for ${box.label}.`}
                 className="w-full h-full p-2 text-base bg-white/90 focus:bg-white text-black placeholder-gray-500 outline-none border-none rounded-sm"
@@ -146,6 +155,6 @@ const TestFramePlayer: React.FC<TestFramePlayerProps> = ({
       })}
     </div>
   );
-};
+});
 
 export default TestFramePlayer;
