@@ -5,6 +5,7 @@ export interface Hotspot {
   w: number;
   h: number;
   label: string;
+  order?: number;
 }
 
 export interface Input {
@@ -41,6 +42,7 @@ interface Box {
 
 export interface HotspotBox extends Box {
   type: BoxType.HOTSPOT;
+  order?: number;
 }
 
 export interface InputBox extends Box {
