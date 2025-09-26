@@ -1,7 +1,7 @@
-import React, { useState, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { FrameData, BoxType, InputBox, HotspotBox } from '../types';
 import TestFramePlayer, { TestFramePlayerRef } from './TestFramePlayer';
-import { ChevronLeftIcon, ChevronRightIcon, ShareIcon } from './icons';
+import { ChevronLeftIcon, ChevronRightIcon, ShareIcon, ClockIcon } from './icons';
 
 interface TestPlayerProps {
   frames: FrameData[];
@@ -39,7 +39,20 @@ export const TestPlayer: React.FC<TestPlayerProps> = ({ frames, onExitTest, shar
   const [backgroundMistakeCount, setBackgroundMistakeCount] = useState<number>(0);
   const [copiedLink, setCopiedLink] = useState(false);
   const [sequenceState, setSequenceState] = useState<Record<string, SequenceState>>({});
+  const [elapsedTime, setElapsedTime] = useState(0);
   const framePlayerRef = useRef<TestFramePlayerRef>(null);
+
+  useEffect(() => {
+    if (showResults) {
+        return;
+    }
+
+    const timerId = setInterval(() => {
+        setElapsedTime(prevTime => prevTime + 1);
+    }, 1000);
+
+    return () => clearInterval(timerId);
+  }, [showResults]);
 
   const currentFrameData = frames[currentFrameIdx];
   const currentUserAnswerForFrame = userAnswers[currentFrameData.id];
@@ -210,6 +223,12 @@ export const TestPlayer: React.FC<TestPlayerProps> = ({ frames, onExitTest, shar
 
     return { score: Math.max(0, s), totalPossible: t };
   }, [showResults, frames, userAnswers, hotspotMistakeCount, backgroundMistakeCount]);
+  
+  const formatTime = (totalSeconds: number) => {
+    const minutes = Math.floor(totalSeconds / 60).toString().padStart(2, '0');
+    const seconds = (totalSeconds % 60).toString().padStart(2, '0');
+    return `${minutes}:${seconds}`;
+  };
 
   if (!currentFrameData) {
     return (
@@ -232,35 +251,57 @@ export const TestPlayer: React.FC<TestPlayerProps> = ({ frames, onExitTest, shar
     mistakeBreakdown.push(`${backgroundMistakeCount} background click${backgroundMistakeCount !== 1 ? 's' : ''}`);
   }
 
-
   return (
     <div className="w-full h-full flex flex-col items-center p-2 md:p-4" role="application">
       <header className="w-full max-w-7xl mb-4">
-        <div className="flex justify-between items-center bg-gray-800 p-3 rounded-lg shadow-lg">
-          <div>
-            <h2 className="text-xl md:text-2xl font-bold text-gray-200">
-              {showResults ? "Test Review" : "Test in Progress"}
-            </h2>
-            <p className="text-gray-400" aria-live="polite">Frame {currentFrameIdx + 1} of {frames.length}</p>
-          </div>
-          <div className="flex items-center gap-3">
-            {shareableLink && (
-              <button
-                onClick={handleShareClick}
-                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 transition-all"
-                aria-label="Copy shareable link to clipboard"
-              >
-                <ShareIcon /> {copiedLink ? 'Link Copied!' : 'Share Test'}
-              </button>
+        <div className="bg-gray-800 p-3 rounded-lg shadow-lg space-y-3">
+            <div className="flex justify-between items-center">
+                <div className="flex items-center gap-4">
+                    <div>
+                        <h2 className="text-xl md:text-2xl font-bold text-gray-200">
+                        {showResults ? "Test Review" : "Test in Progress"}
+                        </h2>
+                        <p className="text-gray-400" aria-live="polite">Frame {currentFrameIdx + 1} of {frames.length}</p>
+                    </div>
+                     {!showResults && (
+                        <div className="hidden sm:flex items-center gap-2 text-lg font-mono bg-gray-900 px-3 py-1 rounded-md text-gray-200" aria-label={`Time elapsed: ${formatTime(elapsedTime)}`}>
+                            <ClockIcon className="h-5 w-5 text-purple-400" />
+                            <span aria-hidden="true">{formatTime(elapsedTime)}</span>
+                        </div>
+                    )}
+                </div>
+
+                <div className="flex items-center gap-3">
+                    {shareableLink && (
+                    <button
+                        onClick={handleShareClick}
+                        className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 transition-all"
+                        aria-label="Copy shareable link to clipboard"
+                    >
+                        <ShareIcon /> <span className="hidden md:inline">{copiedLink ? 'Link Copied!' : 'Share Test'}</span>
+                    </button>
+                    )}
+                    <button
+                    onClick={onExitTest}
+                    className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700 transition-colors"
+                    aria-label="Exit Test"
+                    >
+                    <span className="hidden md:inline">Exit Test</span>
+                    <span className="md:hidden">Exit</span>
+                    </button>
+                </div>
+            </div>
+          
+            {!showResults && (
+                <div>
+                    <div className="w-full bg-gray-700 rounded-full h-2.5" role="progressbar" aria-valuenow={currentFrameIdx + 1} aria-valuemin={1} aria-valuemax={frames.length} aria-label="Test progress">
+                        <div 
+                            className="bg-purple-600 h-2.5 rounded-full transition-all duration-300 ease-out" 
+                            style={{ width: `${((currentFrameIdx + 1) / frames.length) * 100}%` }}>
+                        </div>
+                    </div>
+                </div>
             )}
-            <button
-              onClick={onExitTest}
-              className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700 transition-colors"
-              aria-label="Exit Test"
-            >
-              Exit Test
-            </button>
-          </div>
         </div>
       </header>
 
@@ -287,8 +328,9 @@ export const TestPlayer: React.FC<TestPlayerProps> = ({ frames, onExitTest, shar
                 <div role="status" aria-live="assertive" className="p-4 bg-gray-800 border border-purple-500 rounded-lg text-gray-200 w-full text-center shadow-lg">
                     <h3 className="text-xl font-bold text-purple-400">Test Complete!</h3>
                     <p className="text-lg mt-1">Your score: {score} / {totalPossible}</p>
+                    <p className="text-md mt-1 text-gray-400">Total Time: {formatTime(elapsedTime)}</p>
                     {totalMistakes > 0 && (
-                      <p className="text-sm text-red-400">
+                      <p className="text-sm text-red-400 mt-1">
                         {totalMistakes} point{totalMistakes === 1 ? '' : 's'} deducted for incorrect clicks ({mistakeBreakdown.join(' & ')}).
                       </p>
                     )}
