@@ -6,6 +6,7 @@ interface TestFramePlayerProps {
   onInputChange: (boxId: string, value: string) => void;
   onHotspotInteraction: (boxId: string) => void;
   onFrameClickMistake: () => void;
+  onInputBlur: () => void;
   userInputsForFrame: Record<string, string>; 
   userHotspotsClickedForFrame: Record<string, boolean>; 
   showResults: boolean; 
@@ -17,6 +18,7 @@ const TestFramePlayer: React.FC<TestFramePlayerProps> = ({
   onInputChange,
   onHotspotInteraction,
   onFrameClickMistake,
+  onInputBlur,
   userInputsForFrame,
   userHotspotsClickedForFrame,
   showResults,
@@ -122,6 +124,7 @@ const TestFramePlayer: React.FC<TestFramePlayerProps> = ({
                 type="text"
                 value={userAnswer}
                 onChange={(e) => !showResults && onInputChange(box.id, e.target.value)}
+                onBlur={() => !showResults && onInputBlur()}
                 readOnly={showResults}
                 placeholder={!showResults ? box.label : ''} 
                 title={box.label}
