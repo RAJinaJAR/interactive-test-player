@@ -14,6 +14,11 @@ interface UserAnswer {
   hotspotsClicked: Record<string, boolean>;
 }
 
+interface BackgroundMistake {
+    x: number;
+    y: number;
+}
+
 interface SequenceState {
     nextOrder: number;
 }
@@ -30,6 +35,7 @@ export const TestPlayer: React.FC<TestPlayerProps> = ({ frames, onExitTest, shar
   const [justClickedHotspotId, setJustClickedHotspotId] = useState<string | null>(null);
   const [frameMistakes, setFrameMistakes] = useState<Record<string, boolean>>({});
   const [hotspotMistakeCount, setHotspotMistakeCount] = useState<number>(0);
+  const [backgroundMistakes, setBackgroundMistakes] = useState<Record<string, BackgroundMistake[]>>({});
   const [backgroundMistakeCount, setBackgroundMistakeCount] = useState<number>(0);
   const [copiedLink, setCopiedLink] = useState(false);
   const [sequenceState, setSequenceState] = useState<Record<string, SequenceState>>({});
@@ -142,11 +148,18 @@ export const TestPlayer: React.FC<TestPlayerProps> = ({ frames, onExitTest, shar
     }
   }, [showResults, currentFrameData, navigate, isSequential, orderedHotspots, sequenceState, handleMistakeOccurred]);
 
-  const handleFrameClickMistake = useCallback(() => {
+  const handleFrameClickMistake = useCallback((coords: BackgroundMistake) => {
     if (showResults) return;
     // Only count background clicks as mistakes for scoring if frame has hotspots
     if (currentFrameData?.boxes.some(box => box.type === BoxType.HOTSPOT)) {
         setBackgroundMistakeCount(prev => prev + 1);
+        setBackgroundMistakes(prev => ({
+            ...prev,
+            [currentFrameData.id]: [
+                ...(prev[currentFrameData.id] || []),
+                coords
+            ]
+        }));
         handleMistakeOccurred();
     }
   }, [currentFrameData, handleMistakeOccurred, showResults]);
@@ -263,6 +276,7 @@ export const TestPlayer: React.FC<TestPlayerProps> = ({ frames, onExitTest, shar
           userInputsForFrame={currentUserAnswerForFrame?.inputs || {}}
           userHotspotsClickedForFrame={currentUserAnswerForFrame?.hotspotsClicked || {}}
           showResults={showResults}
+          backgroundMistakesForFrame={backgroundMistakes[currentFrameData.id]}
           justClickedHotspotId={justClickedHotspotId}
         />
       </main>
