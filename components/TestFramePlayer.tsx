@@ -5,15 +5,21 @@ export interface TestFramePlayerRef {
   triggerMistakeFlash: () => void;
 }
 
+interface ClickCoordinates {
+    x: number;
+    y: number;
+}
+
 interface TestFramePlayerProps {
   frame: FrameData;
   onInputChange: (boxId: string, value: string) => void;
   onHotspotInteraction: (boxId: string) => void;
-  onFrameClickMistake: () => void;
+  onFrameClickMistake: (coords: ClickCoordinates) => void;
   onInputBlur: () => void;
   userInputsForFrame: Record<string, string>;
   userHotspotsClickedForFrame: Record<string, boolean>;
   showResults: boolean;
+  backgroundMistakesForFrame?: ClickCoordinates[];
   justClickedHotspotId?: string | null;
 }
 
@@ -26,6 +32,7 @@ const TestFramePlayer = forwardRef<TestFramePlayerRef, TestFramePlayerProps>(({
   userInputsForFrame,
   userHotspotsClickedForFrame,
   showResults,
+  backgroundMistakesForFrame,
   justClickedHotspotId,
 }, ref) => {
   const [showMistakeFlash, setShowMistakeFlash] = useState(false);
@@ -46,7 +53,14 @@ const TestFramePlayer = forwardRef<TestFramePlayerRef, TestFramePlayerProps>(({
     const target = event.target as HTMLElement;
     // Check if click was on the background, not on an interactive element
     if (target.dataset.interactiveType !== 'hotspot' && target.closest('[data-interactive-type="input-area"]') === null) {
-      onFrameClickMistake();
+        const rect = event.currentTarget.getBoundingClientRect();
+        const x = event.clientX - rect.left;
+        const y = event.clientY - rect.top;
+
+        const originalX = (x / rect.width) * frame.originalWidth;
+        const originalY = (y / rect.height) * frame.originalHeight;
+        
+        onFrameClickMistake({ x: originalX, y: originalY });
     }
   };
 
@@ -152,6 +166,26 @@ const TestFramePlayer = forwardRef<TestFramePlayerRef, TestFramePlayerProps>(({
           );
         }
         return null;
+      })}
+      {showResults && backgroundMistakesForFrame?.map((mistake, index) => {
+        const mistakeStyle: React.CSSProperties = {
+            position: 'absolute',
+            left: `${(mistake.x / frame.originalWidth) * 100}%`,
+            top: `${(mistake.y / frame.originalHeight) * 100}%`,
+        };
+        return (
+            <div
+              key={`mistake-${index}`}
+              style={mistakeStyle}
+              className="absolute w-5 h-5 transform -translate-x-1/2 -translate-y-1/2 pointer-events-none"
+              title="Incorrect click location"
+              aria-hidden="true"
+            >
+                <svg viewBox="0 0 24 24" className="text-red-500 fill-current opacity-80 drop-shadow-[0_1px_1px_rgba(0,0,0,0.8)]">
+                    <path stroke="white" strokeWidth="2.5" strokeLinecap="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+            </div>
+        );
       })}
     </div>
   );
