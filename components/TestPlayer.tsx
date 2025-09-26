@@ -1,6 +1,6 @@
-import React, { useState, useCallback, useMemo } from 'react';
-import { FrameData, BoxType, InputBox } from '../types';
-import TestFramePlayer from './TestFramePlayer';
+import React, { useState, useCallback, useMemo, useRef } from 'react';
+import { FrameData, BoxType, InputBox, HotspotBox } from '../types';
+import TestFramePlayer, { TestFramePlayerRef } from './TestFramePlayer';
 import { ChevronLeftIcon, ChevronRightIcon, ShareIcon } from './icons';
 
 interface TestPlayerProps {
@@ -10,8 +10,12 @@ interface TestPlayerProps {
 }
 
 interface UserAnswer {
-  inputs: Record<string, string>; 
-  hotspotsClicked: Record<string, boolean>; 
+  inputs: Record<string, string>;
+  hotspotsClicked: Record<string, boolean>;
+}
+
+interface SequenceState {
+    nextOrder: number;
 }
 
 export const TestPlayer: React.FC<TestPlayerProps> = ({ frames, onExitTest, shareableLink }) => {
@@ -25,10 +29,31 @@ export const TestPlayer: React.FC<TestPlayerProps> = ({ frames, onExitTest, shar
   const [showResults, setShowResults] = useState(false);
   const [justClickedHotspotId, setJustClickedHotspotId] = useState<string | null>(null);
   const [frameMistakes, setFrameMistakes] = useState<Record<string, boolean>>({});
+  const [hotspotMistakeCount, setHotspotMistakeCount] = useState<number>(0);
+  const [backgroundMistakeCount, setBackgroundMistakeCount] = useState<number>(0);
   const [copiedLink, setCopiedLink] = useState(false);
+  const [sequenceState, setSequenceState] = useState<Record<string, SequenceState>>({});
+  const framePlayerRef = useRef<TestFramePlayerRef>(null);
 
   const currentFrameData = frames[currentFrameIdx];
   const currentUserAnswerForFrame = userAnswers[currentFrameData.id];
+  
+  const handleMistakeOccurred = useCallback(() => {
+    if (showResults || !currentFrameData) return;
+    setFrameMistakes(prev => ({ ...prev, [currentFrameData.id]: true }));
+    framePlayerRef.current?.triggerMistakeFlash();
+  }, [currentFrameData, showResults]);
+  
+  const { orderedHotspots, isSequential } = useMemo(() => {
+    if (!currentFrameData) return { orderedHotspots: [], isSequential: false };
+    const hotspots = currentFrameData.boxes
+        .filter((b): b is HotspotBox => b.type === BoxType.HOTSPOT && typeof b.order === 'number')
+        .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+    return {
+        orderedHotspots: hotspots,
+        isSequential: hotspots.length > 1,
+    };
+  }, [currentFrameData]);
 
   const handleShareClick = useCallback(() => {
     if (!shareableLink) return;
@@ -64,81 +89,114 @@ export const TestPlayer: React.FC<TestPlayerProps> = ({ frames, onExitTest, shar
 
   const handleHotspotInteraction = useCallback((boxId: string) => {
     if (showResults) return;
-    setUserAnswers(prev => ({
-      ...prev,
-      [currentFrameData.id]: {
-        ...prev[currentFrameData.id],
-        hotspotsClicked: { ...prev[currentFrameData.id].hotspotsClicked, [boxId]: true },
-      },
-    }));
-    setJustClickedHotspotId(boxId); 
-    setTimeout(() => {
-        navigate('next');
-        setJustClickedHotspotId(null);
-    }, 200);
-  }, [currentFrameData.id, navigate, showResults]);
+
+    const box = currentFrameData.boxes.find(b => b.id === boxId);
+    if (!box || box.type !== BoxType.HOTSPOT) return;
+    const clickedHotspot = box as HotspotBox;
+
+    const recordClick = () => {
+         setUserAnswers(prev => ({
+            ...prev,
+            [currentFrameData.id]: {
+                ...prev[currentFrameData.id],
+                hotspotsClicked: { ...prev[currentFrameData.id].hotspotsClicked, [boxId]: true },
+            },
+        }));
+    };
+
+    if (!isSequential) {
+        recordClick();
+        setJustClickedHotspotId(boxId);
+        setTimeout(() => {
+            navigate('next');
+            setJustClickedHotspotId(null);
+        }, 200);
+        return;
+    }
+    
+    // Logic for sequential frames from here
+    const progress = sequenceState[currentFrameData.id] || { nextOrder: 1 };
+    
+    const isOrderedHotspot = typeof clickedHotspot.order === 'number';
+
+    if (isOrderedHotspot && clickedHotspot.order === progress.nextOrder) {
+        // Correct click in a sequence
+        recordClick();
+        setSequenceState(prev => ({
+            ...prev,
+            [currentFrameData.id]: { ...progress, nextOrder: progress.nextOrder + 1 }
+        }));
+        setJustClickedHotspotId(boxId);
+
+        const isLastInSequence = progress.nextOrder === orderedHotspots.length;
+
+        setTimeout(() => {
+            setJustClickedHotspotId(null);
+            if (isLastInSequence) navigate('next');
+        }, 200);
+
+    } else {
+        // Mistake: clicked an unordered hotspot or an ordered one out of sequence.
+        setHotspotMistakeCount(prev => prev + 1);
+        handleMistakeOccurred();
+    }
+  }, [showResults, currentFrameData, navigate, isSequential, orderedHotspots, sequenceState, handleMistakeOccurred]);
 
   const handleFrameClickMistake = useCallback(() => {
-    if (showResults || !currentFrameData) return;
-    if (currentFrameData.boxes.some(box => box.type === BoxType.HOTSPOT)) {
-      setFrameMistakes(prev => ({ ...prev, [currentFrameData.id]: true }));
+    if (showResults) return;
+    // Only count background clicks as mistakes for scoring if frame has hotspots
+    if (currentFrameData?.boxes.some(box => box.type === BoxType.HOTSPOT)) {
+        setBackgroundMistakeCount(prev => prev + 1);
+        handleMistakeOccurred();
     }
-  }, [currentFrameIdx, showResults, currentFrameData]);
+  }, [currentFrameData, handleMistakeOccurred, showResults]);
 
   const handleInputBlur = useCallback(() => {
     if (showResults || !currentFrameData) return;
-
-    // Check if the frame contains ONLY input boxes (and at least one)
     const isInputsOnlyFrame = 
         currentFrameData.boxes.length > 0 && 
         currentFrameData.boxes.every(box => box.type === BoxType.INPUT);
 
-    if (!isInputsOnlyFrame) {
-      return;
-    }
+    if (!isInputsOnlyFrame) return;
 
-    // Get all input boxes for the current frame
     const inputBoxes = currentFrameData.boxes.filter(box => box.type === BoxType.INPUT);
-
-    // Check if all of them have been filled
     const allInputsFilled = inputBoxes.every(box => {
       const answer = currentUserAnswerForFrame?.inputs[box.id];
       return answer && answer.trim() !== '';
     });
 
     if (allInputsFilled) {
-      // Using a small timeout to let the user see their last input before advancing
-      setTimeout(() => {
-        navigate('next');
-      }, 150);
+      setTimeout(() => navigate('next'), 150);
     }
   }, [currentFrameData, currentUserAnswerForFrame, navigate, showResults]);
 
-  const { score, totalPossible, mistakeFramesCount } = useMemo(() => {
-    if (!showResults) return { score: 0, totalPossible: 0, mistakeFramesCount: 0 };
+  const { score, totalPossible } = useMemo(() => {
+    if (!showResults) return { score: 0, totalPossible: 0 };
     let s = 0;
     let t = 0;
     frames.forEach(frame => {
-      const hasHotspotsOnFrame = frame.boxes.some(b => b.type === BoxType.HOTSPOT);
-      let wasMistakeClickOnFrame = !!frameMistakes[frame.id];
-
+      const frameAnswers = userAnswers[frame.id];
       frame.boxes.forEach(box => {
         t++;
-        const frameAnswers = userAnswers[frame.id];
         if (box.type === BoxType.INPUT) {
           const userAnswer = frameAnswers?.inputs[box.id] ?? '';
           if (userAnswer.trim().toLowerCase() === (box as InputBox).expected.trim().toLowerCase()) {
             s++;
           }
         } else if (box.type === BoxType.HOTSPOT) {
-          if (!wasMistakeClickOnFrame && frameAnswers?.hotspotsClicked[box.id]) {
+          // Score is based on correctly clicked hotspots, regardless of subsequent mistakes on the frame.
+          if (frameAnswers?.hotspotsClicked[box.id]) {
             s++;
           }
         }
       });
     });
-    return { score: s, totalPossible: t, mistakeFramesCount: Object.keys(frameMistakes).length };
-  }, [showResults, frames, userAnswers, frameMistakes]);
+
+    const totalMistakes = hotspotMistakeCount + backgroundMistakeCount;
+    s -= totalMistakes;
+
+    return { score: Math.max(0, s), totalPossible: t };
+  }, [showResults, frames, userAnswers, hotspotMistakeCount, backgroundMistakeCount]);
 
   if (!currentFrameData) {
     return (
@@ -152,6 +210,15 @@ export const TestPlayer: React.FC<TestPlayerProps> = ({ frames, onExitTest, shar
   }
   
   const isLastFrame = currentFrameIdx === frames.length - 1;
+  const totalMistakes = hotspotMistakeCount + backgroundMistakeCount;
+  const mistakeBreakdown = [];
+  if (hotspotMistakeCount > 0) {
+    mistakeBreakdown.push(`${hotspotMistakeCount} wrong hotspot click${hotspotMistakeCount !== 1 ? 's' : ''}`);
+  }
+  if (backgroundMistakeCount > 0) {
+    mistakeBreakdown.push(`${backgroundMistakeCount} background click${backgroundMistakeCount !== 1 ? 's' : ''}`);
+  }
+
 
   return (
     <div className="w-full h-full flex flex-col items-center p-2 md:p-4" role="application">
@@ -186,6 +253,7 @@ export const TestPlayer: React.FC<TestPlayerProps> = ({ frames, onExitTest, shar
 
       <main className="w-full max-w-7xl flex-grow">
         <TestFramePlayer
+          ref={framePlayerRef}
           key={currentFrameData.id}
           frame={currentFrameData}
           onInputChange={handleInputChange}
@@ -205,8 +273,10 @@ export const TestPlayer: React.FC<TestPlayerProps> = ({ frames, onExitTest, shar
                 <div role="status" aria-live="assertive" className="p-4 bg-gray-800 border border-purple-500 rounded-lg text-gray-200 w-full text-center shadow-lg">
                     <h3 className="text-xl font-bold text-purple-400">Test Complete!</h3>
                     <p className="text-lg mt-1">Your score: {score} / {totalPossible}</p>
-                    {mistakeFramesCount > 0 && (
-                      <p className="text-sm text-red-400">Mistake clicks detected on {mistakeFramesCount} frame{mistakeFramesCount === 1 ? '' : 's'}.</p>
+                    {totalMistakes > 0 && (
+                      <p className="text-sm text-red-400">
+                        {totalMistakes} point{totalMistakes === 1 ? '' : 's'} deducted for incorrect clicks ({mistakeBreakdown.join(' & ')}).
+                      </p>
                     )}
                     <p className="text-sm mt-2 text-gray-400">You can now review your answers using the navigation buttons below.</p>
                 </div>
