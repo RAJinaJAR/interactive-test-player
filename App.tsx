@@ -8,7 +8,7 @@ declare const JSZip: any;
 
 type GameState = 'uploading' | 'processing' | 'emailCapture' | 'playing' | 'error';
 
-const LEADERBOARD_API_URL = 'https://script.google.com/macros/s/AKfycbzclWKRbRGwbsAIDBoDkHyS_-YoRee4NCSChjOmxNzE6H7hr0qPpY3dSZtgoDagbh4a/exec';
+const LEADERBOARD_API_URL = 'https://script.google.com/macros/s/AKfycbyWS7Oq1ShX1di1S9Lmryv0am7BD_bmEVWnZrtx8ZwR_Dh9YUgXt5sJxELmy0bMvP2K/exec';
 
 const App: React.FC = () => {
     // ... all of your existing state hooks remain the same ...
