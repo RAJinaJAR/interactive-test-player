@@ -11,7 +11,7 @@ type GameState = 'uploading' | 'processing' | 'emailCapture' | 'playing' | 'erro
 
 // This is a placeholder URL for a Google Apps Script Web App.
 // It would handle POST requests to save scores and GET requests to retrieve leaderboards.
-const LEADERBOARD_API_URL = 'https://script.google.com/macros/s/AKfycbzJDgnBCEilh0BedztGB41Xh8rOL__bcHQRZ0bcId5NyKSedYbLakRMbinHkmz5tL_o/exec';
+const LEADERBOARD_API_URL = 'https://script.google.com/macros/s/AKfycbwBZXDUWfZh5YKBxLJM2YoN6q6HZi8rS0n5EwtH739RuEiuNkWYt4kx6vPjnUCWxMHC/exec';
 
 const App: React.FC = () => {
     const [gameState, setGameState] = useState<GameState>('uploading');
@@ -133,59 +133,51 @@ const App: React.FC = () => {
     }, [processZipFile]);
     
     const handleUrlSubmit = useCallback(async (rawUrl: string) => {
-        setGameState('processing');
-        setError(null);
-        setUserEmail(null);
-        setLeaderboardData(null);
-        setLeaderboardError(null);
+    setGameState('processing');
+    setError(null);
+    setUserEmail(null);
+    setLeaderboardData(null);
+    setLeaderboardError(null);
 
-        let urlToFetch = rawUrl.trim();
+    try {
+        // ⚠️ Replace with your actual script URL
+        const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwBZXDUWfZh5YKBxLJM2YoN6q6HZi8rS0n5EwtH739RuEiuNkWYt4kx6vPjnUCWxMHC/exec'; 
+
+        // Construct the direct Google Drive download link
+        let fileUrlToFetch = rawUrl.trim();
         const gdriveRegex = /drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/;
-        const match = urlToFetch.match(gdriveRegex);
-
+        const match = fileUrlToFetch.match(gdriveRegex);
         if (match && match[1]) {
             const fileId = match[1];
-            urlToFetch = `https://drive.google.com/uc?export=download&id=${fileId}`;
+            fileUrlToFetch = `https://drive.google.com/uc?export?download&id=${fileId}`;
         }
         
         setTestUrl(rawUrl.trim());
 
-        try {
-            const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(urlToFetch)}`;
-            const response = await fetch(proxyUrl);
-            
-            if (!response.ok) {
-                let errorHint = `Status: ${response.status} ${response.statusText}.`;
-                if (rawUrl.includes('drive.google.com')) {
-                    errorHint += ' For Google Drive links, please ensure the sharing permission is set to "Anyone with the link". Private files cannot be accessed.'
-                }
-                throw new Error(`Failed to fetch file from URL. ${errorHint}`);
-            }
-            
-            const blob = await response.blob();
-            
-            if (blob.type.includes('html')) {
-                let errorHint = 'The URL may be incorrect, private, or point to a webpage instead of a direct file link.';
-                 if (rawUrl.includes('drive.google.com')) {
-                    errorHint = 'This can happen with Google Drive if the file is private (please set sharing to "Anyone with the link") or if it is too large and requires a "virus scan" confirmation page. Please ensure it is a direct, public download link.';
-                }
-                throw new Error(`Failed to download the file. ${errorHint}`);
-            }
-
-            if (!blob.type.includes('zip') && !rawUrl.trim().endsWith('.zip')) {
-                 console.warn('Warning: The file from the URL does not appear to be a ZIP file, but we will attempt to process it anyway.');
-            }
-
-            await processZipFile(blob);
-
-        } catch (err) {
-            const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred while fetching the URL.';
-            setError(errorMessage);
-            setGameState('error');
-            console.error(err);
+        // Call YOUR script, passing the Google Drive URL as a parameter
+        const response = await fetch(`${SCRIPT_URL}?fileUrl=${encodeURIComponent(fileUrlToFetch)}`);
+        
+        if (!response.ok) {
+            throw new Error(`Your backend script failed to fetch the file. Status: ${response.status}`);
         }
-    }, [processZipFile]);
+        
+        // The script returns the file's content as a string of byte values.
+        // We convert this back into a proper Blob that JSZip can read.
+        const textData = await response.text();
+        const byteArray = new Uint8Array(textData.split('').map(char => char.charCodeAt(0)));
+        const blob = new Blob([byteArray], { type: 'application/zip' });
 
+        await processZipFile(blob);
+
+    } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred while fetching the URL.';
+        setError(errorMessage);
+        setGameState('error');
+        console.error(err);
+    }
+}, [processZipFile]);
+
+    
     const handleEmailSubmit = (email: string) => {
         if (email.trim()) {
             setUserEmail(email.trim());
