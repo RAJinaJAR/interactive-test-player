@@ -151,7 +151,7 @@ const App: React.FC = () => {
         setTestUrl(rawUrl.trim());
 
         try {
-            const proxyUrl = `https://thingproxy.freeboard.io/fetch/${encodeURIComponent(urlToFetch)}`;
+            const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(urlToFetch)}`;
             const response = await fetch(proxyUrl);
             
             if (!response.ok) {
