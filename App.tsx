@@ -133,47 +133,58 @@ const App: React.FC = () => {
     }, [processZipFile]);
     
     const handleUrlSubmit = useCallback(async (rawUrl: string) => {
-    setGameState('processing');
-    setError(null);
-    setUserEmail(null);
-    setLeaderboardData(null);
-    setLeaderboardError(null);
+        setGameState('processing');
+        setError(null);
+        setUserEmail(null);
+        setLeaderboardData(null);
+        setLeaderboardError(null);
 
-    try {
-        // --- 1. SET YOUR SCRIPT URL HERE ---
-        // This is the deployment URL for your Google Apps Script.
-        const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzJDgnBCEilh0BedztGB41Xh8rOL__bcHQRZ0bcId5NyKSedYbLakRMbinHkmz5tL_o/exec'; // ⚠️ Replace with your actual script URL
-
-        // --- 2. CONSTRUCT THE DIRECT GOOGLE DRIVE LINK (no change here) ---
-        let fileUrlToFetch = rawUrl.trim();
+        let urlToFetch = rawUrl.trim();
         const gdriveRegex = /drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/;
-        const match = fileUrlToFetch.match(gdriveRegex);
+        const match = urlToFetch.match(gdriveRegex);
+
         if (match && match[1]) {
             const fileId = match[1];
-            fileUrlToFetch = `https://drive.google.com/uc?export=download&id=${fileId}`;
+            urlToFetch = `https://drive.google.com/uc?export=download&id=${fileId}`;
         }
         
         setTestUrl(rawUrl.trim());
-        const response = await fetch(`${SCRIPT_URL}?fileUrl=${encodeURIComponent(fileUrlToFetch)}`);
-        
-        if (!response.ok) {
-            // Updated error message to be more specific
-            throw new Error(`Your backend script failed to fetch the file. Status: ${response.status} ${response.statusText}`);
+
+        try {
+            const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(urlToFetch)}`;
+            const response = await fetch(proxyUrl);
+            
+            if (!response.ok) {
+                let errorHint = `Status: ${response.status} ${response.statusText}.`;
+                if (rawUrl.includes('drive.google.com')) {
+                    errorHint += ' For Google Drive links, please ensure the sharing permission is set to "Anyone with the link". Private files cannot be accessed.'
+                }
+                throw new Error(`Failed to fetch file from URL. ${errorHint}`);
+            }
+            
+            const blob = await response.blob();
+            
+            if (blob.type.includes('html')) {
+                let errorHint = 'The URL may be incorrect, private, or point to a webpage instead of a direct file link.';
+                 if (rawUrl.includes('drive.google.com')) {
+                    errorHint = 'This can happen with Google Drive if the file is private (please set sharing to "Anyone with the link") or if it is too large and requires a "virus scan" confirmation page. Please ensure it is a direct, public download link.';
+                }
+                throw new Error(`Failed to download the file. ${errorHint}`);
+            }
+
+            if (!blob.type.includes('zip') && !rawUrl.trim().endsWith('.zip')) {
+                 console.warn('Warning: The file from the URL does not appear to be a ZIP file, but we will attempt to process it anyway.');
+            }
+
+            await processZipFile(blob);
+
+        } catch (err) {
+            const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred while fetching the URL.';
+            setError(errorMessage);
+            setGameState('error');
+            console.error(err);
         }
-        const textData = await response.text();
-        const byteArray = new Uint8Array(textData.split('').map(char => char.charCodeAt(0)));
-        const blob = new Blob([byteArray], { type: 'application/zip' });
-
-        // Your existing logic to process the zip file remains the same
-        await processZipFile(blob);
-
-    } catch (err) {
-        const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred while fetching the URL.';
-        setError(errorMessage);
-        setGameState('error');
-        console.error(err);
-    }
-}, [processZipFile]);
+    }, [processZipFile]);
 
     const handleEmailSubmit = (email: string) => {
         if (email.trim()) {
