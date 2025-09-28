@@ -1,12 +1,19 @@
 import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
-import { FrameData, BoxType, InputBox, HotspotBox } from '../types';
+import { FrameData, BoxType, InputBox, HotspotBox, LeaderboardEntry } from '../types';
 import TestFramePlayer, { TestFramePlayerRef } from './TestFramePlayer';
+import { Leaderboard } from './Leaderboard';
 import { ChevronLeftIcon, ChevronRightIcon, ShareIcon, ClockIcon } from './icons';
 
 interface TestPlayerProps {
   frames: FrameData[];
   onExitTest: () => void;
   shareableLink?: string;
+  onTestComplete: (result: { score: number; totalPossible: number; elapsedTime: number; }) => void;
+  userEmail: string | null;
+  leaderboardData: LeaderboardEntry[] | null;
+  leaderboardLoading: boolean;
+  leaderboardError: string | null;
+  testUrl: string | null;
 }
 
 interface UserAnswer {
@@ -23,7 +30,17 @@ interface SequenceState {
     nextOrder: number;
 }
 
-export const TestPlayer: React.FC<TestPlayerProps> = ({ frames, onExitTest, shareableLink }) => {
+export const TestPlayer: React.FC<TestPlayerProps> = ({ 
+  frames, 
+  onExitTest, 
+  shareableLink, 
+  onTestComplete, 
+  userEmail, 
+  leaderboardData, 
+  leaderboardLoading, 
+  leaderboardError,
+  testUrl,
+}) => {
   const [currentFrameIdx, setCurrentFrameIdx] = useState(0);
   const [userAnswers, setUserAnswers] = useState<Record<string, UserAnswer>>(
     () => frames.reduce((acc, frame) => {
@@ -41,6 +58,7 @@ export const TestPlayer: React.FC<TestPlayerProps> = ({ frames, onExitTest, shar
   const [sequenceState, setSequenceState] = useState<Record<string, SequenceState>>({});
   const [elapsedTime, setElapsedTime] = useState(0);
   const [testStarted, setTestStarted] = useState(false);
+  const [resultsSubmitted, setResultsSubmitted] = useState(false);
   const framePlayerRef = useRef<TestFramePlayerRef>(null);
 
   useEffect(() => {
@@ -97,15 +115,25 @@ export const TestPlayer: React.FC<TestPlayerProps> = ({ frames, onExitTest, shar
     }
   }, [currentFrameIdx, frames.length]);
 
-  const handleInputChange = useCallback((boxId: string, value: string) => {
-    setUserAnswers(prev => ({
-      ...prev,
-      [currentFrameData.id]: {
-        ...prev[currentFrameData.id],
-        inputs: { ...prev[currentFrameData.id].inputs, [boxId]: value },
-      },
-    }));
-  }, [currentFrameData.id]);
+  // In TestPlayer.tsx
+
+const handleInputChange = useCallback((boxId: string, value: string) => {
+    setUserAnswers(prev => {
+        // Safely get the answers for the current frame, or create a default object if it doesn't exist
+        const currentFrameAnswers = prev[currentFrameData.id] || { inputs: {}, hotspotsClicked: {} };
+        
+        return {
+            ...prev,
+            [currentFrameData.id]: {
+                ...currentFrameAnswers,
+                inputs: {
+                    ...currentFrameAnswers.inputs,
+                    [boxId]: value
+                },
+            },
+        };
+    });
+}, [currentFrameData.id]); // Keep the dependency array as is
 
   const handleHotspotInteraction = useCallback((boxId: string) => {
     if (showResults) return;
@@ -115,14 +143,22 @@ export const TestPlayer: React.FC<TestPlayerProps> = ({ frames, onExitTest, shar
     const clickedHotspot = box as HotspotBox;
 
     const recordClick = () => {
-         setUserAnswers(prev => ({
+    setUserAnswers(prev => {
+        // Safely get the answers for the current frame, or create a default object
+        const currentFrameAnswers = prev[currentFrameData.id] || { inputs: {}, hotspotsClicked: {} };
+
+        return {
             ...prev,
             [currentFrameData.id]: {
-                ...prev[currentFrameData.id],
-                hotspotsClicked: { ...prev[currentFrameData.id].hotspotsClicked, [boxId]: true },
+                ...currentFrameAnswers,
+                hotspotsClicked: {
+                    ...currentFrameAnswers.hotspotsClicked,
+                    [boxId]: true
+                },
             },
-        }));
-    };
+        };
+    });
+  };
 
     if (!isSequential) {
         recordClick();
@@ -134,13 +170,11 @@ export const TestPlayer: React.FC<TestPlayerProps> = ({ frames, onExitTest, shar
         return;
     }
     
-    // Logic for sequential frames from here
     const progress = sequenceState[currentFrameData.id] || { nextOrder: 1 };
     
     const isOrderedHotspot = typeof clickedHotspot.order === 'number';
 
     if (isOrderedHotspot && clickedHotspot.order === progress.nextOrder) {
-        // Correct click in a sequence
         recordClick();
         setSequenceState(prev => ({
             ...prev,
@@ -156,7 +190,6 @@ export const TestPlayer: React.FC<TestPlayerProps> = ({ frames, onExitTest, shar
         }, 200);
 
     } else {
-        // Mistake: clicked an unordered hotspot or an ordered one out of sequence.
         setHotspotMistakeCount(prev => prev + 1);
         handleMistakeOccurred();
     }
@@ -164,7 +197,6 @@ export const TestPlayer: React.FC<TestPlayerProps> = ({ frames, onExitTest, shar
 
   const handleFrameClickMistake = useCallback((coords: BackgroundMistake) => {
     if (showResults) return;
-    // Only count background clicks as mistakes for scoring if frame has hotspots
     if (currentFrameData?.boxes.some(box => box.type === BoxType.HOTSPOT)) {
         setBackgroundMistakeCount(prev => prev + 1);
         setBackgroundMistakes(prev => ({
@@ -211,7 +243,6 @@ export const TestPlayer: React.FC<TestPlayerProps> = ({ frames, onExitTest, shar
             s++;
           }
         } else if (box.type === BoxType.HOTSPOT) {
-          // Score is based on correctly clicked hotspots, regardless of subsequent mistakes on the frame.
           if (frameAnswers?.hotspotsClicked[box.id]) {
             s++;
           }
@@ -224,6 +255,13 @@ export const TestPlayer: React.FC<TestPlayerProps> = ({ frames, onExitTest, shar
 
     return { score: Math.max(0, s), totalPossible: t };
   }, [showResults, frames, userAnswers, hotspotMistakeCount, backgroundMistakeCount]);
+
+  useEffect(() => {
+    if (showResults && !resultsSubmitted) {
+        onTestComplete({ score, totalPossible, elapsedTime });
+        setResultsSubmitted(true);
+    }
+  }, [showResults, resultsSubmitted, score, totalPossible, elapsedTime, onTestComplete]);
   
   const formatTime = (totalSeconds: number) => {
     const minutes = Math.floor(totalSeconds / 60).toString().padStart(2, '0');
@@ -357,6 +395,16 @@ export const TestPlayer: React.FC<TestPlayerProps> = ({ frames, onExitTest, shar
                         )}
                         <p className="text-sm mt-2 text-gray-400">You can now review your answers using the navigation buttons below.</p>
                     </div>
+
+                    {testUrl && (
+                      <Leaderboard
+                        data={leaderboardData}
+                        isLoading={leaderboardLoading}
+                        error={leaderboardError}
+                        currentUserEmail={userEmail}
+                      />
+                    )}
+
                     <div className="flex justify-between items-center w-full p-3 bg-gray-800 rounded-lg shadow-lg">
                         <button
                             onClick={() => navigate('prev')}
