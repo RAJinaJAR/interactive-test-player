@@ -4,16 +4,14 @@ import { FileUpload } from './components/FileUpload';
 import { TestPlayer } from './components/TestPlayer';
 import { EmailCapture } from './components/EmailCapture';
 
-// Make JSZip available from the global window object loaded via CDN
 declare const JSZip: any;
 
 type GameState = 'uploading' | 'processing' | 'emailCapture' | 'playing' | 'error';
 
-// This is a placeholder URL for a Google Apps Script Web App.
-// It would handle POST requests to save scores and GET requests to retrieve leaderboards.
 const LEADERBOARD_API_URL = 'https://script.google.com/macros/s/AKfycbwBZXDUWfZh5YKBxLJM2YoN6q6HZi8rS0n5EwtH739RuEiuNkWYt4kx6vPjnUCWxMHC/exec';
 
 const App: React.FC = () => {
+    // ... all of your existing state hooks remain the same ...
     const [gameState, setGameState] = useState<GameState>('uploading');
     const [frames, setFrames] = useState<FrameData[]>([]);
     const [error, setError] = useState<string | null>(null);
@@ -23,6 +21,8 @@ const App: React.FC = () => {
     const [leaderboardLoading, setLeaderboardLoading] = useState(false);
     const [leaderboardError, setLeaderboardError] = useState<string | null>(null);
 
+
+    // ... cleanupResources, handleReset, processZipFile, and handleFileUpload remain the same ...
     const cleanupResources = useCallback(() => {
         frames.forEach(frame => URL.revokeObjectURL(frame.imageDataUrl));
     }, [frames]);
@@ -37,7 +37,6 @@ const App: React.FC = () => {
         setLeaderboardData(null);
         setLeaderboardLoading(false);
         setLeaderboardError(null);
-        // Clear query params from URL
         window.history.replaceState({}, document.title, window.location.pathname);
     }, [cleanupResources]);
 
@@ -76,7 +75,7 @@ const App: React.FC = () => {
                     
                     const imageFile = zip.file(imagePath);
                     if (!imageFile) {
-                         throw new Error(`Could not load image file: ${frame.image}`);
+                        throw new Error(`Could not load image file: ${frame.image}`);
                     }
 
                     const blob = await imageFile.async('blob');
@@ -110,9 +109,9 @@ const App: React.FC = () => {
 
             setFrames(processedFrames);
             if (testUrl) {
-                setGameState('emailCapture'); // Show email form for URL-based tests
+                setGameState('emailCapture');
             } else {
-                setGameState('playing'); // Skip email form for local files
+                setGameState('playing');
             }
         } catch (err) {
             const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred during file processing.';
@@ -125,7 +124,7 @@ const App: React.FC = () => {
     const handleFileUpload = useCallback(async (file: File) => {
         setGameState('processing');
         setError(null);
-        setTestUrl(null); // Local files can't have leaderboards
+        setTestUrl(null);
         setUserEmail(null);
         setLeaderboardData(null);
         setLeaderboardError(null);
@@ -133,49 +132,46 @@ const App: React.FC = () => {
     }, [processZipFile]);
     
     const handleUrlSubmit = useCallback(async (rawUrl: string) => {
-    setGameState('processing');
-    setError(null);
-    setUserEmail(null);
-    setLeaderboardData(null);
-    setLeaderboardError(null);
+        setGameState('processing');
+        setError(null);
+        setUserEmail(null);
+        setLeaderboardData(null);
+        setLeaderboardError(null);
 
-    try {
-        // ⚠️ Replace with your actual script URL
-        const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwBZXDUWfZh5YKBxLJM2YoN6q6HZi8rS0n5EwtH739RuEiuNkWYt4kx6vPjnUCWxMHC/exec'; 
+        try {
+            // REFACTOR: Re-using the constant from the top of the file
+            const SCRIPT_URL = LEADERBOARD_API_URL; 
 
-        // Construct the direct Google Drive download link
-        let fileUrlToFetch = rawUrl.trim();
-        const gdriveRegex = /drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/;
-        const match = fileUrlToFetch.match(gdriveRegex);
-        if (match && match[1]) {
-            const fileId = match[1];
-            fileUrlToFetch = `https://drive.google.com/uc?export?download&id=${fileId}`;
+            let fileUrlToFetch = rawUrl.trim();
+            const gdriveRegex = /drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/;
+            const match = fileUrlToFetch.match(gdriveRegex);
+            if (match && match[1]) {
+                const fileId = match[1];
+                // FIX: Corrected Google Drive URL parameter from '?export?' to '?export='
+                fileUrlToFetch = `https://drive.google.com/uc?export=download&id=${fileId}`;
+            }
+            
+            setTestUrl(rawUrl.trim());
+
+            const response = await fetch(`${SCRIPT_URL}?fileUrl=${encodeURIComponent(fileUrlToFetch)}`);
+            
+            if (!response.ok) {
+                throw new Error(`Your backend script failed to fetch the file. Status: ${response.status}`);
+            }
+            
+            const textData = await response.text();
+            const byteArray = new Uint8Array(textData.split('').map(char => char.charCodeAt(0)));
+            const blob = new Blob([byteArray], { type: 'application/zip' });
+
+            await processZipFile(blob);
+
+        } catch (err) {
+            const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred while fetching the URL.';
+            setError(errorMessage);
+            setGameState('error');
+            console.error(err);
         }
-        
-        setTestUrl(rawUrl.trim());
-
-        // Call YOUR script, passing the Google Drive URL as a parameter
-        const response = await fetch(`${SCRIPT_URL}?fileUrl=${encodeURIComponent(fileUrlToFetch)}`);
-        
-        if (!response.ok) {
-            throw new Error(`Your backend script failed to fetch the file. Status: ${response.status}`);
-        }
-        
-        // The script returns the file's content as a string of byte values.
-        // We convert this back into a proper Blob that JSZip can read.
-        const textData = await response.text();
-        const byteArray = new Uint8Array(textData.split('').map(char => char.charCodeAt(0)));
-        const blob = new Blob([byteArray], { type: 'application/zip' });
-
-        await processZipFile(blob);
-
-    } catch (err) {
-        const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred while fetching the URL.';
-        setError(errorMessage);
-        setGameState('error');
-        console.error(err);
-    }
-}, [processZipFile]);
+    }, [processZipFile]);
 
     
     const handleEmailSubmit = (email: string) => {
@@ -193,14 +189,18 @@ const App: React.FC = () => {
 
         if (userEmail) {
             try {
-                // Using 'no-cors' as a simple way to POST to Google Apps Script without complex CORS setup.
-                // We won't be able to read the response, but the request will go through.
-                await fetch(LEADERBOARD_API_URL, {
+                // IMPROVEMENT: Removed mode: 'no-cors' for better error handling
+                const postResponse = await fetch(LEADERBOARD_API_URL, {
                     method: 'POST',
-                    mode: 'no-cors', 
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ ...result, testUrl, email: userEmail }),
                 });
+
+                if (!postResponse.ok) {
+                  // Now we can handle submission errors properly
+                  console.error("Failed to submit score, server responded with an error.");
+                }
+
             } catch (err) {
                 console.error("Failed to submit score:", err);
             }
@@ -216,7 +216,7 @@ const App: React.FC = () => {
             if (data && Array.isArray(data.entries)) {
                 setLeaderboardData(data.entries);
             } else {
-                 throw new Error("Invalid leaderboard data format from server.");
+                throw new Error("Invalid leaderboard data format from server.");
             }
         } catch (err) {
             const msg = err instanceof Error ? err.message : "An unknown error occurred.";
@@ -227,6 +227,7 @@ const App: React.FC = () => {
         }
     }, [testUrl, userEmail]);
 
+    // ... useEffect, shareableLink, and the return() JSX remain the same ...
     useEffect(() => {
         const params = new URLSearchParams(window.location.search);
         const urlFromQuery = params.get('testUrl');
@@ -247,7 +248,7 @@ const App: React.FC = () => {
             <main className="w-full max-w-9xl flex-grow flex items-center justify-center">
                 {gameState === 'uploading' && <FileUpload onFileUpload={handleFileUpload} onUrlSubmit={handleUrlSubmit} />}
                 {gameState === 'processing' && <div className="text-xl">Processing your test...</div>}
-                {gameState === 'emailCapture' && <EmailCapture onEmailSubmit={handleEmailSubmit} />}
+                {gameState ==='emailCapture' && <EmailCapture onEmailSubmit={handleEmailSubmit} />}
                 {(gameState === 'error') && (
                     <div className="text-center p-8 bg-gray-800 rounded-lg shadow-lg">
                         <h2 className="text-2xl text-red-400 mb-4">An Error Occurred</h2>
