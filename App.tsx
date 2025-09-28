@@ -11,7 +11,7 @@ type GameState = 'uploading' | 'processing' | 'emailCapture' | 'playing' | 'erro
 
 // This is a placeholder URL for a Google Apps Script Web App.
 // It would handle POST requests to save scores and GET requests to retrieve leaderboards.
-const LEADERBOARD_API_URL = 'https://script.google.com/macros/s/AKfycbwbGeG0blgwwdatW3o15wgMsYUTYaemP2fRHLAi2oK9IHbwFibNPngOfsIqmZq5t4dn/exec';
+const LEADERBOARD_API_URL = 'https://script.google.com/macros/s/AKfycbzJDgnBCEilh0BedztGB41Xh8rOL__bcHQRZ0bcId5NyKSedYbLakRMbinHkmz5tL_o/exec';
 
 const App: React.FC = () => {
     const [gameState, setGameState] = useState<GameState>('uploading');
