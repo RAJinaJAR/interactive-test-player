@@ -244,8 +244,11 @@ const App: React.FC = () => {
     }, [testUrl]);
 
     return (
-        <div className="min-h-screen flex flex-col items-center justify-center p-4 bg-gray-900">
-            <main className="w-full max-w-9xl flex-grow flex items-center justify-center">
+        <div className="min-h-screen flex flex-col items-center p-4 bg-gray-900">
+            <header className="w-full max-w-9xl py-4 text-center">
+                <h1 className="text-4xl font-bold text-purple-400 tracking-wider">EvaluationLab</h1>
+            </header>
+            <main className="w-full max-w-9xl flex-grow flex flex-col items-center justify-center">
                 {gameState === 'uploading' && <FileUpload onFileUpload={handleFileUpload} onUrlSubmit={handleUrlSubmit} />}
                 {gameState === 'processing' && <div className="text-xl">Processing your test...</div>}
                 {gameState ==='emailCapture' && <EmailCapture onEmailSubmit={handleEmailSubmit} />}
